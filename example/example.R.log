@@ -1,5 +1,5 @@
 > ## Example 1
-> df <- read.csv("data/example1.csv")
+> df <- read.csv("data.csv")
 > summary(df)
      admit             gre             gpa             rank      
  Min.   :0.0000   Min.   :220.0   Min.   :2.260   Min.   :1.000  
@@ -48,3 +48,5 @@ AIC: 467.44
 
 Number of Fisher Scoring iterations: 4
 
+> 
+> 

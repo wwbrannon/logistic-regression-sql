@@ -1,15 +1,5 @@
--- Logistic regression on continuous predictors, adapted for sparse matrices.
--- Implemented entirely in Postgres' dialect of SQL.
--- William Brannon, will.brannon@gmail.com, Dec 2013.
-
--- Estimation is by maximum likelihood. The log likelihood is given by
--- 	l(t) = log L(t)
---           = log p(Y | X; t)
---           = sum(i=1,i=m, y(i)*log(h(x(i))) + (1 - y(i)) * log(1 - h(x(i)))),
--- where h(x(i)) := logit(transpose(t) * x(i)). Because l(t) is convex, we'll
--- fit the model with stochastic gradient ascent. The update rule after taking the partials is
--- 	t_j := t_j + a * sum(i=1,i=m, (y(i) - h(x(i)))* x(i)_j)
--- so we need to compute this iteratively and check for convergence.
+-- Logistic regression in Postgres' pl/pgsql, fit by maximum likelihood.
+-- William Brannon, will.brannon@gmail.com.
 
 -- the sigmoid function
 CREATE OR REPLACE FUNCTION sigmoid(FLOAT)
@@ -24,8 +14,8 @@ $$ LANGUAGE sql;
 -- make this work right...
 -- estimate the intercept term
 -- calculate the log likelihood and actually check convergence
-CREATE OR REPLACE FUNCTION lreg(X REGCLASS, Y REGCLASS, alpha FLOAT = 0.1)
-	RETURNS TABLE (rownum INT, val FLOAT)
+CREATE OR REPLACE FUNCTION lregr(X REGCLASS, Y REGCLASS)
+	RETURNS TABLE (id INT, val FLOAT)
 	RETURNS NULL ON NULL INPUT
 	VOLATILE
 AS $func$
@@ -39,14 +29,14 @@ DECLARE
 BEGIN
 	CREATE LOCAL TEMPORARY TABLE theta
 	(
-		rownum INT,
+		id INT,
 		val FLOAT,
-		PRIMARY KEY(rownum)
+		PRIMARY KEY(id)
 	) ON COMMIT PRESERVE ROWS;
 
 	-- the initial guess for theta
 	INSERT INTO theta
-		(rownum, val)
+		(id, val)
 	SELECT DISTINCT
 		colnum,
 		0.9
@@ -66,16 +56,16 @@ BEGIN
 					INNER JOIN
 					(
 						SELECT DISTINCT
-							X.rownum,
-							(y.val::INT - sigmoid(SUM(T.val * X.val) OVER (PARTITION BY X.rownum))) AS val
+							X.id,
+							(y.val::INT - sigmoid(SUM(T.val * X.val) OVER (PARTITION BY X.id))) AS val
 						FROM theta T
-							INNER JOIN X ON T.rownum = X.colnum
-							INNER JOIN Y ON Y.rownum = X.rownum
-						ORDER BY X.rownum
-					) resid ON X.rownum = resid.rownum
+							INNER JOIN X ON T.id = X.colnum
+							INNER JOIN Y ON Y.id = X.id
+						ORDER BY X.id
+					) resid ON X.id = resid.id
 				GROUP BY x.colnum
 			) it
-			WHERE it.colnum = theta.rownum;
+			WHERE it.colnum = theta.id;
 
 			-- scale the coefficients
 			UPDATE theta
@@ -95,44 +85,4 @@ BEGIN
 	SELECT * FROM theta;
 END
 $func$ LANGUAGE plpgsql;
-
--- Create table shells for the design matrix, response vector and
--- parameter vector, and populate them.
-DROP TABLE IF EXISTS X;
-CREATE TABLE X
-(
-	rownum INT,
-	colnum INT,
-	val FLOAT,
-	PRIMARY KEY(rownum, colnum)
-);
-
-DROP TABLE IF EXISTS Y;
-CREATE TABLE Y
-(
-	rownum INT,
-	val BOOLEAN,
-	PRIMARY KEY(rownum)
-);
-
-COPY X
-	(rownum, colnum, val)
-FROM '/home/will/bin/xvar.csv'
-WITH
-(
-	FORMAT CSV,
-	HEADER TRUE
-);
-
-COPY Y
-	(rownum, val)
-FROM '/home/will/bin/yvar.csv'
-WITH
-(
-	FORMAT CSV,
-	HEADER TRUE
-);
-
--- estimate!
-SELECT lreg('X', 'Y');
 

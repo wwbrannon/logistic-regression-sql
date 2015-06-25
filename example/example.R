@@ -1,5 +1,5 @@
 ## Example 1
-df <- read.csv("data/example1.csv")
+df <- read.csv("data.csv")
 summary(df)
 dim(df)
 
